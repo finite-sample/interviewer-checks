@@ -202,6 +202,122 @@ What the generic checks find, and what they miss:
   Because sampling points nest within interviewers, `interviewer_similarity` cannot separate "copied by the
   interviewer" from "same village", and with the district as area it inherits the same caveat as pattern repetition.
 
+## Case study: the REDS 2013-14 household listing
+
+NCAER's Rural Economic and Demographic Survey (REDS), in its 2013-14 SEPRI rounds, listed 92,996 households in 193
+villages across 13 states on paper schedules. [`examples/reds.py`](examples/reds.py) reads sections 1-3 from wherever
+the data sit; they are not distributed with this package.
+
+```bash
+uv run python examples/reds.py path/to/reds/data   # about 12 minutes on a laptop
+```
+
+Three choices shape the results, and each is open to dispute:
+
+- **Who the interviewer is.** The schedules record `interviewer_name` as typed text, so one person appears under
+  many spellings (KASHI NATH, KASHINATH, KAHSI NATH): 5,605 raw names for about 600 people. Within each village the
+  script maps every name to the most similar frequent name there (difflib ratio of at least 0.8), and drops the 1.8%
+  of households whose name matches none. The result is 598 interviewers with a median of 120 interviews and about 6
+  interviewers per village.
+- **The items.** There are 30 closed-ended items: dwelling (roof, floor, water, toilet, electricity), food security
+  (including nine never/rarely/sometimes/often hunger items), and the head's caste group, religion and job card.
+- **The area.** Interviewers share villages, which is the design these checks need, but within a village each one
+  took short runs of the street-ordered listing, about six households at a time. Own interviews are therefore nearer
+  neighbours than other interviewers' interviews in the same village. The area is a 50-household stretch of the
+  listing, so the shuffle compares an interviewer only with colleagues on the same few streets. That narrows the
+  geographic gap but cannot close it.
+
+Output (verbatim, abridged to the top rows of each table):
+
+```
+91,338 households, 191 villages, 598 interviewers (median 120 interviews; 6 interviewers per village)
+
+## percent_match within village (30 items; chance agreement from village marginals)
+best match >= 0.85: 97.3%; exact-duplicate pairs: 279,583; beyond chance: 23 (villages: {'Sepri2-12-74-175': 23})
+
+## exact twins by listing distance: other interviewer vs same interviewer
+distance  pairs_other  twins_other  pairs_same  twins_same  ratio
+       1         7657        0.027       83490       0.074  2.777
+       2        11699        0.021       79257       0.053  2.584
+     3-5        56213        0.014      215509       0.039  2.853
+    6-10       136178        0.011      312872       0.028  2.458
+   11-25       537112        0.010      781508       0.019  1.954
+   26-50      1192909        0.008      909846       0.013  1.698
+  51-100      3004279        0.007      847166       0.010  1.545
+    >100     34976696        0.005     2113724       0.004  0.945
+
+## interviewer_similarity (area = 50-household stretch of the listing)
+pooled excess 0.0157 (p = 0.00002); 29% of interviews sit in single-interviewer stretches and are not tested; flagged 141
+
+## pattern_repetition (nine hunger items; all-'never' strings excluded)
+flagged 65
+
+## straightlining (nine hunger items)
+overall 65.2% straight-lined; flagged 20
+                 interviewer  tested  share  expected_share  p_adjusted
+      Sepri2-15-SANATANPANDA     302  0.602           0.331   4.696e-36
+     Sepri2-12-DASORATHGHOSH     242  0.908           0.719   6.071e-32
+       Sepri1-17-GKMAHADEVAN     130  0.557           0.290   1.112e-25
+
+## interview clock (same interviewer, same village and day, overlapping start-end times)
+interviews overlapping an earlier one: 6.4%
+                              timed  overlap_share  busiest_day  median_minutes
+Sepri2-15-DAMODARBEHERA         435          0.598           28            60.0
+Sepri2-15-SURYAMANIMAHAPATRA    231          0.580           26            80.0
+Sepri1-17-SARUNRAJ              303          0.485           35            60.0
+
+## by field team (wave-state): flags from the answers beside overlaps from the clock
+             interviewers  similarity  repetition  straightlining  median_overlap
+Sepri1-17              55          28          32               4           0.043
+Sepri1-5               35          24          11               3           0.048
+Sepri1-14              33          18           6               1           0.079
+Sepri2-12              49          18           9               4           0.086
+Sepri1-13              26          16           0               2           0.114
+Sepri1-11              23          15           1               2           0.086
+Sepri2-15              36           9           6               1           0.084
+Sepri1-6               84           6           0               0           0.008
+Sepri1-7               48           3           0               2           0.011
+Sepri2-10              80           3           0               0           0.009
+Sepri1-16              58           1           0               1           0.011
+Sepri2-3               40           0           0               0           0.005
+Sepri2-4               28           0           0               0           0.008
+Spearman correlation, similarity excess vs clock overlap, across interviewers: 0.30
+```
+
+What this shows:
+
+- **Raw percent match is uninformative here.** 97% of households have a best match of at least 0.85, and 279,583
+  pairs agree on all 30 items, because neighbouring households in a village share housing, water, caste and (mostly)
+  no hunger. Judged against expected agreement, only 23 households stand out, all in one village. Their rows look
+  genuine rather than copied: the first pair has consecutive listing numbers and was interviewed back to back by
+  the same interviewer (9:00-9:30, 9:35-10:00). That is what two households in one compound look like.
+- **Twins concentrate within interviewers at a fixed distance.** Households a few listing places apart are 2.5-2.9
+  times as likely to be exact twins when one interviewer did both. The excess shrinks with distance and vanishes
+  beyond 100 places, so it is not a fixed interviewer style. It is either geography that the listing distance
+  misses (runs ending at lane boundaries) or interviewers filling in neighbouring households from one visit.
+  Among pairs within ten places, two interviewers working the same day produce twins 0.9% of the time; one
+  interviewer on one day produces them 5.1% of the time.
+- **The answer checks and the clock point to the same field teams.** The clock check shares no code or data with
+  the answer checks. It counts interviews that begin before the same interviewer's previous interview that day has
+  ended. One person cannot do two interviews at once, so either the times were not written down as the interviews
+  happened or more than one person worked under the name. Seven state teams (wave-state codes 17, 5, 14, 12, 13,
+  11, 15) hold 128 of the 141 similarity flags and 65 of the 65 repetition flags, and their median overlap is
+  4-11%. The other six teams have 13 similarity flags and about 1% overlap. One row-level example: on its busiest
+  day SARUNRAJ logs 35 interviews. Five consecutive households share the slot 07:10-07:50, the others start on
+  whole hours with two or three per hour from 07:00 to 20:00, and the food-security answers barely vary.
+- **Straight-lining is mostly genuine but uneven.** 65% of households answer "never" to all nine hunger items. Twenty
+  interviewers record that far more often than colleagues on the same streets (SANATANPANDA: 60% against 33%).
+  Food-insecurity estimates from these data inherit that difference.
+
+What this does not show: that any interview was invented. The geographic confound is narrowed, not removed, and an
+interviewer name may stand for a pair working together. What it does show is where to look. A few field teams
+produce answers that are more alike within interviewers, and times that cannot all be true. An analysis that uses
+these data can rerun its estimates without those teams, or with interviewer fixed effects.
+
+No published estimate on this machine can be checked against these flags. Munshi and Rosenzweig (2016, *AER*,
+openICPSR 112956) use the 2006 REDS listing. That round was collected by different field staff, so flags in the
+2013-14 rounds say nothing about it. Jensenius (2015, *AEJ: Applied*, openICPSR 113613) uses census village data.
+
 ## What the tests establish
 
 The tests simulate surveys in which answers depend on area-level opinion and a respondent trait, so neighbouring
