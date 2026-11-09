@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 from synthetic import make_survey
 
+import interviewer_checks.experiments as experiments
 from interviewer_checks import assignment_balance, cluster_influence, effect_heterogeneity
+from interviewer_checks._util import shuffle_within
 
 FABRICATORS = [3, 17]
 
@@ -67,7 +70,8 @@ def test_clean_surveys_reject_at_the_nominal_rate():
     effect_p, balance_p, heterogeneity_p = [], [], []
     for seed in range(15):
         df = make_survey(seed=seed, areas=20)
-        effects = effect_heterogeneity(df, "support", "treated", "interviewer")
+        effects = effect_heterogeneity(df, "support", "treated", "interviewer", n_permutations=999, seed=seed)
+        assert effects.attrs["method"] == "permutation"
         effect_p.extend(effects.loc[effects["tested"], "p_value"])
         heterogeneity_p.append(effects.attrs["p_value"])
         balance_p.extend(assignment_balance(df, "treated", "interviewer")["p_value"])
@@ -78,7 +82,8 @@ def test_clean_surveys_reject_at_the_nominal_rate():
 
 def test_planted_fabrication_moves_interviewer_effects():
     df = pakistan_style()
-    table = effect_heterogeneity(df, "support", "treated", "interviewer").set_index("interviewer")
+    table = effect_heterogeneity(df, "support", "treated", "interviewer", n_permutations=1999, seed=0)
+    table = table.set_index("interviewer")
     assert table.loc[FABRICATORS, "flagged"].all()
     assert (table.loc[FABRICATORS, "z"] > 0).all()
     assert table.drop(FABRICATORS)["flagged"].sum() <= 1
@@ -106,3 +111,109 @@ def test_planted_fabrication_is_among_the_most_influential_clusters():
     table = cluster_influence(df, ate, "interviewer")
     assert set(FABRICATORS) <= set(table.head(4)["interviewer"])
     assert (table.set_index("interviewer").loc[FABRICATORS, "shift"] < 0).all()
+
+
+def few_per_arm(rng: np.random.Generator, interviewers: int = 30, per_arm: int = 4) -> pd.DataFrame:
+    """A homogeneous effect of 0.5 with interviewer-level baselines and a handful of units in each arm."""
+    cluster = np.repeat(np.arange(interviewers), 2 * per_arm)
+    treated = np.tile(np.r_[np.ones(per_arm), np.zeros(per_arm)], interviewers).astype(int)
+    y = rng.normal(size=interviewers)[cluster] + 0.5 * treated + rng.normal(size=len(cluster))
+    return pd.DataFrame({"g": cluster, "t": treated, "y": y})
+
+
+def test_permutation_holds_its_size_where_chi2_does_not():
+    # 30 interviewers with 4 units per arm and the same effect everywhere: the standard errors are so noisy that Q
+    # against chi-square rejects in about 70% of runs (and Bonferroni-on-z flags someone in about 60%), while the
+    # within-interviewer shuffle stays near 5% for both. 60 runs keep this to a few seconds.
+    rng = np.random.default_rng(11)
+    rejections = {"chi2": [], "permutation": []}
+    any_flag = {"chi2": [], "permutation": []}
+    for run in range(60):
+        df = few_per_arm(rng)
+        for method in rejections:
+            table = effect_heterogeneity(
+                df, "y", "t", "g", min_respondents=1, method=method, n_permutations=199, seed=run
+            )
+            rejections[method].append(table.attrs["p_value"] < 0.05)
+            any_flag[method].append(table["flagged"].any())
+    assert np.mean(rejections["chi2"]) > 0.4
+    assert np.mean(rejections["permutation"]) <= 0.12
+    assert np.mean(any_flag["chi2"]) > 0.3
+    assert np.mean(any_flag["permutation"]) <= 0.12
+
+
+def test_permutation_still_finds_planted_heterogeneity():
+    df = few_per_arm(np.random.default_rng(12))
+    df.loc[df["g"] < 3, "y"] += 3.0 * df.loc[df["g"] < 3, "t"]
+    table = effect_heterogeneity(df, "y", "t", "g", min_respondents=1, method="permutation", seed=0)
+    assert table.attrs["p_value"] < 0.01
+    assert set(table.loc[table["flagged"], "g"]) <= {0, 1, 2}
+
+
+def test_auto_picks_permutation_for_small_arms_and_chi2_for_large_ones():
+    rng = np.random.default_rng(13)
+    small = effect_heterogeneity(few_per_arm(rng, 10, 4), "y", "t", "g", min_respondents=1, n_permutations=99)
+    assert small.attrs["method"] == "permutation" and small.attrs["min_arm"] == 4
+    assert small.attrs["n_permutations"] == 99
+    large = effect_heterogeneity(few_per_arm(rng, 5, experiments.CHI2_MIN_ARM), "y", "t", "g")
+    assert large.attrs["method"] == "chi2" and large.attrs["n_permutations"] == 0
+    assert large.attrs["p_value"] == pytest.approx(stats.chi2.sf(large.attrs["q"], 4))
+    # One interviewer one unit short of the threshold sends the whole test to the permutation.
+    df = few_per_arm(rng, 5, experiments.CHI2_MIN_ARM)
+    df = df.drop(df.index[(df["g"] == 0) & (df["t"] == 1)][:1])
+    assert effect_heterogeneity(df, "y", "t", "g", n_permutations=99).attrs["method"] == "permutation"
+
+
+def test_shuffle_within_keeps_every_cell_s_values():
+    cells = np.repeat([0, 1, 2], [3, 5, 4])
+    values = np.array([1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0], dtype=bool)
+    draws = shuffle_within(cells, values, 500, np.random.default_rng(0))
+    for cell in range(3):
+        members = cells == cell
+        assert (draws[:, members].sum(axis=1) == values[members].sum()).all()
+        assert len({tuple(row) for row in draws[:, members]}) > 1
+
+
+def test_permutation_null_keeps_each_interviewer_s_arm_sizes(monkeypatch):
+    df = few_per_arm(np.random.default_rng(14), 6, 3)
+    df = df.drop(df.index[[0, 7, 8]]).reset_index(drop=True)
+    expected = df.groupby("g")["t"].sum().to_numpy()
+    seen = []
+
+    def spy(cells, values, draws, rng):
+        out = shuffle_within(cells, values, draws, rng)
+        seen.append((cells, out))
+        return out
+
+    monkeypatch.setattr(experiments, "shuffle_within", spy)
+    effect_heterogeneity(df, "y", "t", "g", min_respondents=1, method="permutation", n_permutations=200)
+    cells, draws = seen[0]
+    per_cluster = np.stack([draws[:, cells == g].sum(axis=1) for g in range(6)], axis=1)
+    assert (per_cluster == expected).all()
+
+
+def test_vectorized_statistics_match_the_table_on_the_observed_labels():
+    rng = np.random.default_rng(15)
+    respondents = 120
+    wide = pd.DataFrame({"id": np.arange(respondents), "g": rng.integers(0, 4, respondents)})
+    wide["t"] = rng.integers(0, 2, respondents)
+    long = wide.loc[wide.index.repeat(rng.integers(1, 4, respondents))].reset_index(drop=True)
+    long["y"] = rng.normal(size=len(long)) + long["t"]
+    table = effect_heterogeneity(long, "y", "t", "g", respondent="id", min_respondents=1, method="chi2")
+    units = long.groupby(["g", "id"], sort=True).agg(sums=("y", "sum"), counts=("y", "size"), t=("t", "first"))
+    groups = units.index.get_level_values("g").to_numpy()
+    starts = np.flatnonzero(np.r_[True, groups[1:] != groups[:-1]])
+    effects, se, pooled = experiments._cluster_effects(
+        units["sums"].to_numpy(), units["counts"].to_numpy(float), starts, units["t"].to_numpy(bool)[np.newaxis]
+    )
+    assert effects[0] == pytest.approx(table["effect"].to_numpy())
+    assert se[0] == pytest.approx(table["se"].to_numpy())
+    assert pooled[0] == pytest.approx(table.attrs["effect"])
+    assert experiments._q_statistic(effects[0], se[0])[0] == pytest.approx(table.attrs["q"])
+
+
+def test_permutation_refuses_respondents_in_both_arms():
+    df = pd.DataFrame({"id": [1, 1, 2, 2, 3, 4], "g": 0, "t": [0, 1, 0, 0, 1, 1], "y": [0.0, 1, 2, 3, 4, 6]})
+    with pytest.raises(ValueError, match="varies within 1 respondent"):
+        effect_heterogeneity(df, "y", "t", "g", respondent="id", min_respondents=1, method="permutation")
+    assert effect_heterogeneity(df, "y", "t", "g", respondent="id", min_respondents=1, method="chi2").attrs["df"] == 0

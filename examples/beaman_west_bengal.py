@@ -7,7 +7,6 @@ The directory must hold the J-PAL "Powerful Women in India" files ``powerful_wom
 doi:10.7910/DVN/O3UKFO). The data are not distributed with this package.
 """
 
-import itertools
 import sys
 
 import numpy as np
@@ -149,44 +148,6 @@ def gap_cells(df: pd.DataFrame) -> pd.DataFrame:
     return cells
 
 
-def exact_p(cells: pd.DataFrame, pooled: float) -> float:
-    """Exact two-sided p-value for "this interviewer's effect equals the pooled one".
-
-    Subtract the pooled effect from the twice-reserved cells' gaps, so that under the null the arm labels carry no
-    information, then enumerate every way of choosing which cells are twice-reserved. The p-value is the share of
-    relabelings whose difference in means is at least as large in absolute value as the observed one. With three or
-    four cells in an arm, the standard error behind effect_heterogeneity's z is itself noisy and the normal reference
-    distribution overstates how surprising a large z is; the enumeration needs neither.
-    """
-    treated = cells["twice"].to_numpy().astype(bool)
-    gaps = cells["gap"].to_numpy() - pooled * treated
-    observed = gaps[treated].mean() - gaps[~treated].mean()
-    effects = np.array(
-        [
-            gaps[list(chosen)].mean() - np.delete(gaps, list(chosen)).mean()
-            for chosen in itertools.combinations(range(len(gaps)), int(treated.sum()))
-        ]
-    )
-    return float(np.mean(np.abs(effects) >= abs(observed) - 1e-12))
-
-
-def relabeled_q(cells: pd.DataFrame, observed: float, pooled: float, draws: int = 1999) -> float:
-    """Permutation p-value for Cochran's Q: the share of relabelings with a Q at least as large as observed.
-
-    As in :func:`exact_p`, the pooled effect is taken out of the twice-reserved gaps, and the arm labels are then
-    shuffled within each interviewer, keeping how many cells each interviewer has in each arm. Every interviewer then
-    has the same true effect, so this is the null distribution of Q with the same few-cell standard errors.
-    """
-    rng = np.random.default_rng(0)
-    adjusted = cells.assign(gap=cells["gap"] - pooled * cells["twice"])
-    labels = adjusted.groupby("interviewer")["twice"]
-    null = []
-    for _ in range(draws):
-        shuffled = adjusted.assign(twice=labels.transform(lambda arm: rng.permutation(arm.to_numpy())))
-        null.append(effect_heterogeneity(shuffled, "gap", "twice", "interviewer", min_respondents=4).attrs["chi2"])
-    return float((1 + np.sum(np.array(null) >= observed - 1e-12)) / (1 + draws))
-
-
 def main(root: str) -> None:
     df = load(root)
     per_interviewer = df.groupby("interviewer").size()
@@ -228,23 +189,28 @@ def main(root: str) -> None:
     arms = cells.groupby("interviewer")["twice"].agg(["sum", "size"])
     eligible = arms.index[(arms["sum"] >= 2) & (arms["size"] - arms["sum"] >= 2)]
     effects = effect_heterogeneity(
-        cells[cells["interviewer"].isin(eligible)], "gap", "twice", "interviewer", min_respondents=4
+        cells[cells["interviewer"].isin(eligible)], "gap", "twice", "interviewer", min_respondents=4, seed=0
     )
     a = effects.attrs
-    print(
-        f"{len(cells)} cells; {len(eligible)} interviewers with at least two cells in each arm. Pooled change "
-        f"{a['effect']:.3f} (SE {a['se']:.3f}; {a['se_cluster']:.3f} clustered by interviewer); Cochran's Q = "
-        f"{a['chi2']:.1f} on {a['df']} df, p = {a['p_value']:.3f}; flagged {effects['flagged'].sum()}"
+    chi2 = effect_heterogeneity(
+        cells[cells["interviewer"].isin(eligible)], "gap", "twice", "interviewer", min_respondents=4, method="chi2"
     )
-    columns = ["interviewer", "treated", "control", "effect", "se", "z", "p_adjusted"]
-    print(effects.sort_values("z", key=np.abs, ascending=False).head(5)[columns].to_string(index=False))
-    top = effects.loc[effects["z"].abs().idxmax(), "interviewer"]
-    own = cells[cells["interviewer"] == top]
-    p_exact = exact_p(own, effects.attrs["effect"])
-    tested = len(eligible)
-    print(f"exact relabeling test for {top}: p = {p_exact:.3f}; Bonferroni over {tested}: {p_exact * tested:.2f}")
-    q_p = relabeled_q(cells[cells["interviewer"].isin(eligible)], a["chi2"], a["effect"])
-    print(f"Cochran's Q against relabeling within interviewer: p = {q_p:.3f}\n")
+    print(
+        f"{len(cells)} cells; {len(eligible)} interviewers with at least two cells in each arm (smallest arm "
+        f"{a['min_arm']}). Pooled change {a['effect']:.3f} (SE {a['se']:.3f}; {a['se_cluster']:.3f} clustered by "
+        f"interviewer); Cochran's Q = {a['q']:.1f} on {a['df']} df"
+    )
+    print(
+        f"against chi-square: p = {chi2.attrs['p_value']:.3f}, flagged {chi2['flagged'].sum()}; against "
+        f"{a['n_permutations']:,} relabelings within interviewer ({a['method']}, chosen by method='auto'): "
+        f"p = {a['p_value']:.3f}, flagged {effects['flagged'].sum()}"
+    )
+    shown = effects.merge(
+        chi2[["interviewer", "p_value", "p_adjusted"]], on="interviewer", suffixes=("_perm", "_chi2")
+    ).sort_values("z", key=np.abs, ascending=False)
+    columns = ["interviewer", "treated", "control", "effect", "se", "z", "p_value_chi2", "p_adjusted_chi2"]
+    columns += ["p_value_perm", "p_adjusted_perm"]
+    print(shown.head(5)[columns].to_string(index=False), "\n")
 
     print("## cluster_influence (headline change in the gap, each interviewer left out)")
     influence = cluster_influence(df, gap_change, "interviewer")

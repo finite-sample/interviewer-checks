@@ -100,6 +100,15 @@ def permutation_p(null: np.ndarray, observed: np.ndarray) -> np.ndarray:
     return np.where(np.isfinite(observed), p_values, np.nan)
 
 
+def shuffle_within(cells: np.ndarray, values: np.ndarray, draws: int, rng: np.random.Generator) -> np.ndarray:
+    """``draws`` copies of ``values``, each shuffled independently within every cell."""
+    out = np.empty((draws, len(values)), dtype=values.dtype)
+    for cell in np.unique(cells):
+        members = np.flatnonzero(cells == cell)
+        out[:, members] = rng.permuted(np.broadcast_to(values[members], (draws, len(members))), axis=1)
+    return out
+
+
 def straightlined(codes: np.ndarray, values: np.ndarray) -> np.ndarray:
     """Interviews with at least two answered items that all carry the same value."""
     answered = codes >= 0

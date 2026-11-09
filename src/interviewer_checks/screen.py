@@ -60,7 +60,8 @@ def screen(
 
     Which checks run depends on what is passed:
 
-    - ``treatment`` and ``outcome``: :func:`effect_heterogeneity` (interviewer-specific effects),
+    - ``treatment`` and ``outcome``: :func:`effect_heterogeneity` (interviewer-specific effects, judged by shuffling
+      treatment within interviewer unless every interviewer has 100 or more respondents per arm),
       :func:`cluster_influence` on the difference in means, and :func:`assignment_balance`. For an outcome made of
       several items, pass their mean: with every respondent answering every item, the difference in respondent means
       equals the long-format difference and its row-level standard error equals the respondent-clustered one.
@@ -124,7 +125,16 @@ def screen(
         table = table.merge(result[[key, *columns]].rename(columns=columns), on=key, how="left")
 
     if treatment is not None and outcome is not None:
-        effects = effect_heterogeneity(df, outcome, treatment, key, min_respondents=min_respondents, alpha=alpha)
+        effects = effect_heterogeneity(
+            df,
+            outcome,
+            treatment,
+            key,
+            min_respondents=min_respondents,
+            alpha=alpha,
+            n_permutations=n_permutations,
+            seed=seed,
+        )
         results["effect_heterogeneity"] = effects
         merge(
             effects,
@@ -133,8 +143,8 @@ def screen(
         attrs = effects.attrs
         lines.append(
             f"Pooled effect {attrs['effect']:.3f} (SE {attrs['se']:.3f}; {attrs['se_cluster']:.3f} clustered by "
-            f"interviewer). Heterogeneity across interviewers: chi2 = {attrs['chi2']:.1f} on {attrs['df']} df, "
-            f"p = {attrs['p_value']:.3g}. Interviewer effects off the pooled one: "
+            f"interviewer). Heterogeneity across interviewers: Q = {attrs['q']:.1f} on {attrs['df']} df, "
+            f"p = {attrs['p_value']:.3g} ({attrs['method']}). Interviewer effects off the pooled one: "
             f"{_names(effects, key, effects['flagged'])}. No variation in the outcome: "
             f"{', '.join(map(str, attrs['zero_variance'])) or 'none'}."
         )

@@ -28,7 +28,7 @@ uv pip install -e .
 | Function | What it compares | Null | Catches |
 |---|---|---|---|
 | `cluster_influence(df, estimate_fn, cluster)` | the estimate with each cluster left out against the full-data estimate | none (descriptive; shifts are scaled by the jackknife SE) | estimates that rest on a few interviewers |
-| `effect_heterogeneity(df, outcome, treatment, cluster, respondent=None)` | each interviewer's treated-minus-control difference against the pooled one, with respondent-clustered SEs in long format | Cochran's Q across interviewers; per-interviewer z, with Bonferroni | interviewer-specific treatment effects; interviewers with zero standard error |
+| `effect_heterogeneity(df, outcome, treatment, cluster, respondent=None, method="auto")` | each interviewer's treated-minus-control difference against the pooled one, with respondent-clustered SEs in long format | Cochran's Q across interviewers and per-interviewer z, judged by shuffling treatment within interviewer (max-T for the flags) when any arm has under 100 units, else chi-square and normal with Bonferroni | interviewer-specific treatment effects; interviewers with zero standard error |
 | `assignment_balance(df, treatment, cluster)` | each interviewer's treated count against the overall share | exact binomial, with Bonferroni; chi-square of interviewer × arm | interviews that skipped the randomization |
 | `percent_match(df, items, area=None)` | each interview's best match (share of identical answers) against the agreement expected by chance from item distributions in its area | items agree independently with those chances; Bonferroni over all pairs searched | copied or duplicated interviews |
 | `interviewer_similarity(df, items, interviewer, area)` | how close each interview's nearest twin among the same interviewer's work is, against shuffled interviewer labels | shuffle interviewer labels within area | interviewers whose interviews resemble each other |
@@ -40,7 +40,7 @@ uv pip install -e .
 
 Each docstring spells out the mechanism, so `help(interviewer_checks.percent_match)` says exactly what is compared.
 
-### Two design choices that matter
+### Three design choices that matter
 
 **Nulls condition on area.** People who live near each other answer alike. If interviewers work in different areas,
 "interviewer X's answers are unusual" may just mean that X works somewhere unusual. So every interviewer-level null
@@ -53,6 +53,21 @@ same thing, and no data-only check can tell them apart. Each check reports `sing
 interviewer (common: one interviewer per cluster is a standard field design), pass a coarser area such as the district.
 Then remember that the comparison also absorbs differences between villages inside the district. The case study below
 shows what that costs.
+
+**Interviewer effects are judged by permutation when arms are small.** Cochran's Q adds up each interviewer's
+squared z, and each z divides by a standard error estimated from that interviewer's own few respondents. A noisy
+standard error is sometimes far too small, so the squared z has a heavier tail than the chi-square assumes, and the
+excess adds up over interviewers. With a common effect, 4 respondents per arm and 30 interviewers, Q against
+chi-square rejects at 5% in 73% of simulated surveys; with 10 per arm and 60 interviewers, in 34%; even with 50 per
+arm it rejects in 7-9%. `effect_heterogeneity` therefore removes the estimated common effect and shuffles treatment
+labels within each interviewer, keeping each interviewer's number of treated and control respondents, and recomputes
+Q and every z on each shuffle. In the same simulations that rejects in 4-6%. The flags compare each interviewer's
+|z| with the largest |z| in each shuffle (Westfall and Young's max-T), which holds the chance of any false flag near
+5% (6% against Bonferroni's 62% at 4 per arm). `method="auto"` uses this whenever some tested interviewer has fewer
+than 100 respondents in an arm, which in practice is most surveys; `attrs["method"]` says which ran. The shuffle tests
+that treatment shifts every respondent's outcome by the same amount. If treatment also changes how spread out the
+answers are, it over-rejects with very few respondents per arm (15-30% in simulation when the treated SD is twice the
+control SD with 2-8 per arm), though far less than chi-square does (80-95%).
 
 **Percent match is judged against expected agreement, not against 85%.** Kuriakose and Robbins flag respondents who
 match another respondent on 85% or more of the questions. Simmons, Mercer, Schwarzer and Kennedy (2016) showed that
@@ -92,7 +107,7 @@ print(result.table.head(4)[["interviewer", "effect_z", "share_treated", "repeate
 ```
 60 interviewers, 7,200 interviews.
 Areas (area): 20, 0% worked by a single interviewer.
-Pooled effect -0.028 (SE 0.004; 0.005 clustered by interviewer). Heterogeneity across interviewers: chi2 = 99.6 on 59 df, p = 0.000746. Interviewer effects off the pooled one: 12, 22. No variation in the outcome: none.
+Pooled effect -0.028 (SE 0.004; 0.005 clustered by interviewer). Heterogeneity across interviewers: Q = 99.6 on 59 df, p = 0.0021 (permutation). Interviewer effects off the pooled one: 12. No variation in the outcome: none.
 Leaving one interviewer out moves the effect most for 12 (-0.0043, -0.8 jackknife SE), 22 (-0.0013, -0.2 jackknife SE), 14 (+0.0010, +0.2 jackknife SE).
 Assignment: 49.5% treated overall; interviewer x treatment chi2 = 68.4 on 59 df, p = 0.188. Lopsided interviewers: none.
 Repeated answer strings beyond what the area produces: 12.
@@ -100,13 +115,14 @@ Straight-lining (9.3% of interviews overall) above the area rate: none.
 Flagged by two or more checks: 12.
   interviewer  effect_z  share_treated  repeated_share               flags
 0          12  6.140406       0.350000        0.583333  effect, repetition
-1          22  3.357077       0.450000        0.075000              effect
-2           0  1.873818       0.508333        0.075000
-3           1 -1.917643       0.508333        0.075000
+1           0  1.873818       0.508333        0.075000                    
+2           1 -1.917643       0.508333        0.075000                    
+3           2 -1.006649       0.558333        0.091667                    
 ```
 
-The planted interviewer is the only one flagged twice. Interviewer 22 is a false positive on one check: Bonferroni
-holds the chance of any false flag to about 5% per check, not zero. Interviewer 12's 35% treated share over 120
+The planted interviewer is the only one flagged twice, and the only one flagged at all by the effect check. (Under
+the chi-square reference with Bonferroni, interviewer 22 was flagged as well, a false positive; any reference holds the
+chance of a false flag to about 5% per check, not zero.) Interviewer 12's 35% treated share over 120
 interviews is not enough for the balance check after correcting for 60 interviewers. A single flag is a lead to
 follow up, not a finding.
 
@@ -127,17 +143,17 @@ uv run python examples/blair_pakistan.py path/to/fms09-data-weighted-20june.dta
 Output (verbatim):
 
 ```
-5,479 respondents, 75 interviewers
+5,444 respondents, 75 interviewers
 
 ## effect_heterogeneity (long format, SEs clustered on respondent)
-pooled ATE -0.013 (SE 0.005); Cochran's Q = 93.1 on 59 df, p = 0.0031; zero standard error: [33, 35]
- interviewer  respondents  treated  control  effect    se     z  p_adjusted  flagged
-          33           12        4        8   0.000 0.000   inf         NaN    False
-          35           12        4        8   0.000 0.000   inf         NaN    False
-          71           52       17       35   0.047 0.014 4.445   5.275e-04     True
-          37          160       60      100   0.082 0.024 3.998   3.829e-03     True
-           7          101       48       53   0.037 0.021 2.344   1.000e+00    False
-without 7, 37, 71: ATE -0.021; Q = 54.8 on 56 df, p = 0.519
+pooled ATE -0.013 (SE 0.005); Cochran's Q = 118.0 on 59 df, p = 0.0001 (permutation, smallest arm 7); zero standard error: [33, 35]
+ interviewer  respondents  treated  control  effect    se     z   p_value  p_adjusted  flagged
+          35           12        4        8   0.000 0.000   inf       NaN         NaN    False
+          33           12        4        8   0.000 0.000   inf       NaN         NaN    False
+          71           51       17       34   0.057 0.010 7.096 1.000e-04   1.000e-04     True
+          37          160       60      100   0.082 0.024 4.002 2.000e-04   3.090e-02     True
+           7          101       48       53   0.037 0.021 2.349 2.340e-02   8.161e-01    False
+without 7, 37, 71: ATE -0.021; Q = 52.6 on 56 df, p = 0.756 (permutation)
 
 ## pattern_repetition (strings over the four policies, by arm, shuffled within district)
  interviewer  tested  repeated_share  expected_share  p_adjusted                     modal_by_stratum
@@ -154,7 +170,7 @@ flagged: [7, 10, 12, 22, 24, 29, 37, 41, 44, 45, 55, 56, 61, 63, 66, 71]
 ## screen (one row per interview; outcome = mean support over the four policies)
 75 interviewers, 5,444 interviews.
 Areas (district): 50, 0% worked by a single interviewer.
-Pooled effect -0.013 (SE 0.005; 0.007 clustered by interviewer). Heterogeneity across interviewers: chi2 = 118.0 on 59 df, p = 7.98e-06. Interviewer effects off the pooled one: 37, 71. No variation in the outcome: 33, 35.
+Pooled effect -0.013 (SE 0.005; 0.007 clustered by interviewer). Heterogeneity across interviewers: Q = 118.0 on 59 df, p = 0.0001 (permutation). Interviewer effects off the pooled one: 37, 71. No variation in the outcome: 33, 35.
 Leaving one interviewer out moves the effect most for 37 (-0.0047, -0.7 jackknife SE), 66 (+0.0022, +0.3 jackknife SE), 71 (-0.0018, -0.3 jackknife SE).
 Assignment: 49.2% treated overall; interviewer x treatment chi2 = 76.3 on 74 df, p = 0.404. Lopsided interviewers: none.
 Repeated answer strings beyond what the area produces: 7, 10, 12, 22, 24, 29, 37, 41, 44, 45, 55, 56, 61, 63, 66, 71.
@@ -179,13 +195,15 @@ same search within sampling points: best match >= 0.85: 31.4%; exact-duplicate p
 What the generic checks find, and what they miss:
 
 - **Treatment-effect heterogeneity is the strongest signal.** Interviewers differ in their effects more than noise
-  allows (Q = 93.1 on 59 df, p = 0.003). The two most extreme, 71 and 37, survive a Bonferroni correction over 60
-  interviewers. Interviewer 7 is next (z = 2.3), but that is not significant once you correct for looking at 60
+  allows (Q = 118.0 on 59 df). The smallest tested interviewer has 7 respondents in an arm, so the test shuffles
+  treatment within interviewer, and no shuffle in 9,999 reaches the observed Q (p = 0.0001, the smallest attainable).
+  The two most extreme interviewers, 71 and 37, survive the max-T correction over 60 interviewers (adjusted p = 0.0001
+  and 0.03). Interviewer 7 is next (z = 2.3, unadjusted p = 0.02), but not once you correct for looking at 60
   interviewers. Without 7, 37 and 71, the pooled effect moves from −0.013 to −0.021 and the heterogeneity disappears
-  (Q = 54.8 on 56 df, p = 0.52). Interviewers 33 and 35 have zero standard error: every respondent's answers equal
-  their arm's mean, so neither interviewer has any respondent-to-respondent variation. (The wide-format run in
-  `screen` drops the 35 respondents who got both endorsed and unendorsed items. Without them, 71's standard error
-  shrinks and Q rises to 118.)
+  (Q = 52.6 on 56 df, p = 0.76). Interviewers 33 and 35 have zero standard error: every respondent's answers equal
+  their arm's mean, so neither interviewer has any respondent-to-respondent variation. Both runs drop the 35
+  respondents who got both endorsed and unendorsed items, because they belong to neither arm and the shuffle moves
+  whole respondents. (With them kept, the chi-square run gave Q = 93.1 and p = 0.003.)
 - **Repeated strings point at the same three interviewers but are not specific here.** 71, 7 and 37 record 4-0-0-4 in
   58–94% of their control interviews and 4-1-0-4 in 55–65% of their treated ones. No other interviewer has
   arm-specific strings like these. Still, 16 interviewers are flagged, because the shuffle is within district while
@@ -380,15 +398,14 @@ interviewer  units  treated  share_treated  expected_treated  p_value  p_adjuste
 ever reserved against never, all councils: 57.6%; chi2 = 28.4 on 26 df, p = 0.340
 
 ## effect_heterogeneity (girl-boy gap in the index per interviewer x council; twice vs never)
-194 cells; 12 interviewers with at least two cells in each arm. Pooled change 0.258 (SE 0.112; 0.110 clustered by interviewer); Cochran's Q = 32.1 on 11 df, p = 0.001; flagged 1
- interviewer  treated  control  effect    se      z  p_adjusted
-          81        3        6   1.056 0.211  3.785       0.002
-          83        4        7  -0.517 0.284 -2.724       0.077
-          80        3        5   0.044 0.121 -1.762       0.937
-         107        3        4  -0.217 0.274 -1.731       1.000
-         103        3        5   0.618 0.310  1.163       1.000
-exact relabeling test for 81: p = 0.071; Bonferroni over 12: 0.86
-Cochran's Q against relabeling within interviewer: p = 0.182
+194 cells; 12 interviewers with at least two cells in each arm (smallest arm 2). Pooled change 0.258 (SE 0.112; 0.110 clustered by interviewer); Cochran's Q = 32.1 on 11 df
+against chi-square: p = 0.001, flagged 1; against 9,999 relabelings within interviewer (permutation, chosen by method='auto'): p = 0.196, flagged 0
+ interviewer  treated  control  effect    se      z  p_value_chi2  p_adjusted_chi2  p_value_perm  p_adjusted_perm
+          81        3        6   1.056 0.211  3.785     1.537e-04            0.002         0.055            0.258
+          83        4        7  -0.517 0.284 -2.724     6.441e-03            0.077         0.017            0.545
+          80        3        5   0.044 0.121 -1.762     7.807e-02            0.937         0.225            0.901
+         107        3        4  -0.217 0.274 -1.731     8.345e-02            1.000         0.184            0.911
+         103        3        5   0.618 0.310  1.163     2.450e-01            1.000         0.357            0.992
 
 ## cluster_influence (headline change in the gap, each interviewer left out)
 full 0.188; interviewer-jackknife SE 0.073; council-jackknife SE 0.057; range without one interviewer 0.159 to 0.246
@@ -447,12 +464,14 @@ What this shows:
   interviewers (96 with 11 councils, 100 with 8) never worked a twice-reserved council. That fits chance, given
   that only 20 councils were reserved twice. It does mean those interviewers contribute nothing to the within-
   interviewer contrast.
-- **(b) No reliable interviewer heterogeneity, and no interviewer carries the result.** On the face of it, Q = 32.1
-  on 11 df (p = 0.001) and interviewer 81 survives Bonferroni (z = 3.8). Both rest on standard errors computed from
-  three or four councils per arm, and those are too noisy for a normal reference. Relabeling which of an
-  interviewer's councils count as twice-reserved, with the pooled effect removed, gives p = 0.07 for interviewer 81
-  (0.86 after correction) and p = 0.18 for Q. The synthetic tests do not cover this regime, a few units per arm;
-  that is a limitation of `effect_heterogeneity`'s z, not a finding about the survey. Leaving out any one interviewer
+- **(b) No reliable interviewer heterogeneity, and no interviewer carries the result.** Against chi-square, Q = 32.1
+  on 11 df gives p = 0.001 and interviewer 81 survives Bonferroni (z = 3.8). Both rest on standard errors computed
+  from two to four councils per arm, which are too noisy for those references; the simulations above show how far
+  they over-reject in this regime. With so few councils, `method="auto"` shuffles which of an interviewer's councils
+  count as twice-reserved, with the common effect removed. Then Q has p = 0.20 (the shuffled Q averages 23.5 against
+  a chi-square mean of 11), and interviewer 81 has p = 0.055 alone and 0.26 after max-T, so nothing is flagged. The
+  shuffle assumes treatment shifts outcomes without changing their spread; here the within-interviewer spread of the
+  gap is the same in both arms (SD 0.487 twice-reserved, 0.485 never). Leaving out any one interviewer
   keeps the headline between 0.159 and 0.246, at least 2.8 council-jackknife SEs from zero. The largest shifts are 83
   (+0.058) and 81 (−0.029), and they pull in opposite directions.
 - **(c) Answer similarity is weak, and where it is testable it is not specific.** Within villages, 9.4% of
@@ -480,13 +499,19 @@ checks can say. With one interviewer per village, interviewer and village cannot
 The tests simulate surveys in which answers depend on area-level opinion and a respondent trait, so neighbouring
 respondents resemble each other and items are correlated. The fixture is [`tests/synthetic.py`](tests/synthetic.py).
 
-- **Specificity.** On clean surveys, the share of per-interviewer p-values below 0.05 is close to 5%: 5.0% for
-  effect heterogeneity and 4.3% for balance (600 interviewer tests each), and 2.8% for straight-lining, 2.3% for
+- **Specificity.** On clean surveys, the share of per-interviewer p-values below 0.05 is close to 5%: 4.8% for
+  effect heterogeneity (by permutation, which `auto` picks at about 60 respondents per arm) and 4.3% for balance (600 interviewer tests each), and 2.8% for straight-lining, 2.3% for
   pattern repetition and 5.6% for similarity (216 each). The two count-based checks come in under 5% because counts
   are discrete. The tests require each rate to stay below 10% and the p-values not to pile up at one. A full `screen`
   of a clean survey raises at most two single flags and no double flags. A check would fail these tests if it treated
   a neighbour's small-sample rate as known. An earlier draft of `straightlining` did that and flagged 10 of 60 clean
   interviewers.
+- **Few respondents per arm.** With 30 interviewers, 4 respondents per arm and one common effect, Q against
+  chi-square rejects in more than 40% of 60 simulated surveys and Bonferroni flags someone in more than 30%, while the
+  permutation reference stays at or below 12% on both (about 5% over 1,000 runs). A test checks that every shuffle
+  keeps each interviewer's number of treated and control units; letting the shuffle cross interviewers fails it, and
+  fails the test that a planted interviewer-specific effect is still found. Another checks that the vectorized
+  statistics on the observed labels equal the table's, in long format with respondent clusters.
 - **Pakistan-style fabrication.** Two interviewers record a fixed string in about 60% of interviews, with different
   strings by arm, and mostly assign the invented ones to control. Both are flagged by `effect_heterogeneity` and by
   `pattern_repetition`. They are the two most lopsided interviewers in `assignment_balance`, and at least one survives

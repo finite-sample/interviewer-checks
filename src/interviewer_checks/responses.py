@@ -18,6 +18,7 @@ from interviewer_checks._util import (
     one_hot,
     permutation_p,
     poisson_binomial_sf,
+    shuffle_within,
     straightlined,
 )
 
@@ -203,15 +204,6 @@ def _shared_areas(area_codes: np.ndarray, interviewer_codes: np.ndarray) -> tupl
     }
 
 
-def _shuffle_within(cells: np.ndarray, values: np.ndarray, draws: int, rng: np.random.Generator) -> np.ndarray:
-    """``draws`` copies of ``values``, each shuffled independently within every cell."""
-    out = np.empty((draws, len(values)), dtype=values.dtype)
-    for cell in np.unique(cells):
-        members = np.flatnonzero(cells == cell)
-        out[:, members] = rng.permuted(np.broadcast_to(values[members], (draws, len(members))), axis=1)
-    return out
-
-
 def interviewer_similarity(
     df: pd.DataFrame,
     items: Sequence[Hashable],
@@ -314,7 +306,7 @@ def interviewer_similarity(
         batch = max(1, min(n_permutations, 20_000_000 // len(members) ** 2))
         for start in range(0, n_permutations, batch):
             draws = min(batch, n_permutations - start)
-            shuffled = _shuffle_within(np.zeros(len(own)), own, draws, rng)
+            shuffled = shuffle_within(np.zeros(len(own)), own, draws, rng)
             total, count = per_interviewer(shuffled, nearest(shuffled, similarity, True))
             null_sum[start : start + draws] += total
             null_count[start : start + draws] += count
@@ -441,7 +433,7 @@ def pattern_repetition(
     batch = max(1, min(n_simulations, 20_000_000 // (groups * n_strings)))
     for start in range(0, n_simulations, batch):
         draws = min(batch, n_simulations - start)
-        null[start : start + draws] = repeats(_shuffle_within(cells, interviewer_codes[rows], draws, rng))
+        null[start : start + draws] = repeats(shuffle_within(cells, interviewer_codes[rows], draws, rng))
 
     tested = np.bincount(interviewer_codes[rows], minlength=n_interviewers)
     records = []

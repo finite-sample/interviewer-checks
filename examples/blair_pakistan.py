@@ -49,8 +49,10 @@ def load(path: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         ]
     )
     endorsed = interviews[[policy + "_endorsed" for policy in POLICIES]]
-    # Respondents with some endorsed and some control items belong to neither arm.
+    # Respondents with some endorsed and some control items belong to neither arm, and the permutation test in
+    # effect_heterogeneity shuffles whole respondents, so they are dropped from both formats.
     interviews = interviews[endorsed.all(axis=1) | ~endorsed.any(axis=1)].copy()
+    long = long[long["respondent"].isin(interviews.index)]
     interviews["treated"] = endorsed.loc[interviews.index].all(axis=1).astype(int)
     interviews["support"] = interviews[list(POLICIES)].mean(axis=1) / 4
 
@@ -64,20 +66,27 @@ def main(path: str) -> None:
     print(f"{len(long) // 4:,} respondents, {interviews['interviewer'].nunique()} interviewers\n")
 
     print("## effect_heterogeneity (long format, SEs clustered on respondent)")
-    effects = effect_heterogeneity(long, "response", "endorsed", "interviewer", respondent="respondent")
+    effects = effect_heterogeneity(long, "response", "endorsed", "interviewer", respondent="respondent", seed=0)
     a = effects.attrs
     print(
-        f"pooled ATE {a['effect']:.3f} (SE {a['se']:.3f}); Cochran's Q = {a['chi2']:.1f} on {a['df']} df, "
-        f"p = {a['p_value']:.4f}; zero standard error: {a['zero_variance']}"
+        f"pooled ATE {a['effect']:.3f} (SE {a['se']:.3f}); Cochran's Q = {a['q']:.1f} on {a['df']} df, "
+        f"p = {a['p_value']:.4f} ({a['method']}, smallest arm {a['min_arm']}); zero standard error: "
+        f"{a['zero_variance']}"
     )
-    columns = ["interviewer", "respondents", "treated", "control", "effect", "se", "z", "p_adjusted", "flagged"]
+    columns = ["interviewer", "respondents", "treated", "control", "effect", "se", "z", "p_value", "p_adjusted"]
+    columns.append("flagged")
     print(effects.sort_values("z", ascending=False).head(5)[columns].to_string(index=False))
     rest = effect_heterogeneity(
-        long[~long["interviewer"].isin([7, 37, 71])], "response", "endorsed", "interviewer", respondent="respondent"
+        long[~long["interviewer"].isin([7, 37, 71])],
+        "response",
+        "endorsed",
+        "interviewer",
+        respondent="respondent",
+        seed=0,
     ).attrs
     print(
-        f"without 7, 37, 71: ATE {rest['effect']:.3f}; Q = {rest['chi2']:.1f} on {rest['df']} df, "
-        f"p = {rest['p_value']:.3f}\n"
+        f"without 7, 37, 71: ATE {rest['effect']:.3f}; Q = {rest['q']:.1f} on {rest['df']} df, "
+        f"p = {rest['p_value']:.3f} ({rest['method']})\n"
     )
 
     print("## pattern_repetition (strings over the four policies, by arm, shuffled within district)")
