@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from interviewer_checks.clock import interview_clock
 from interviewer_checks.experiments import assignment_balance, cluster_influence, effect_heterogeneity
 from interviewer_checks.responses import interviewer_similarity, pattern_repetition, percent_match, straightlining
 
@@ -44,6 +45,12 @@ def screen(
     area: Hashable | None = None,
     treatment: Hashable | None = None,
     outcome: Hashable | None = None,
+    start: Hashable | None = None,
+    end: Hashable | None = None,
+    duration: Hashable | None = None,
+    date: Hashable | Sequence[Hashable] | None = None,
+    min_minutes: float | None = None,
+    max_minutes: float | None = None,
     n_permutations: int = 9999,
     min_respondents: int = 20,
     alpha: float = 0.05,
@@ -64,6 +71,9 @@ def screen(
     - ``pattern_items`` (defaults to ``items``): :func:`pattern_repetition` (stratified by ``treatment`` when given)
       and :func:`straightlining`. Use a short battery here (the outcome items of an experiment); full strings over a
       long questionnaire almost never repeat.
+    - ``start`` (with ``end`` or ``duration``, and ``date``): :func:`interview_clock`, which flags interviewers whose
+      interviews overlap their own previous interview more often than the survey-wide rate, and reports crowded days
+      and short interviews.
 
     The checks are deliberately generic. None looks for a particular string or pattern; together they ask whether an
     estimate depends on a few interviewers, whether interviewers differ in their treatment effects more than
@@ -78,6 +88,12 @@ def screen(
         area: Area column (sampling point, district). The null distributions are built within it.
         treatment: 0/1 treatment column of a survey experiment.
         outcome: Numeric outcome column of the experiment.
+        start: Interview start time (datetime or minutes).
+        end: Interview end time.
+        duration: Interview length in minutes, used when ``end`` is not given.
+        date: Column(s) identifying a working day; see :func:`clock_flags`.
+        min_minutes: Floor below which an interview counts as short.
+        max_minutes: Longer interviews count as untimed.
         n_permutations: Shuffles and redraws for the permutation checks.
         min_respondents: Smallest interviewer that enters the heterogeneity test.
         alpha: Family-wise error rate behind every flag.
@@ -193,6 +209,36 @@ def screen(
             f"(permutation p = {attrs['p_value']:.3g}); interviewers whose interviews resemble each other beyond "
             f"chance: {_names(similarity, key, similarity['flagged'])}."
         )
+
+    if start is not None:
+        times = interview_clock(
+            df,
+            key,
+            start,
+            end=end,
+            duration=duration,
+            date=date,
+            min_minutes=min_minutes,
+            max_minutes=max_minutes,
+            alpha=alpha,
+        )
+        results["interview_clock"] = times
+        merge(
+            times,
+            {
+                "overlap_share": "overlap_share",
+                "max_per_day": "max_per_day",
+                "short_share": "short_share",
+                "flagged": "flag_clock",
+            },
+        )
+        line = (
+            f"Clock: {times.attrs['overlap_share']:.1%} of interviews that follow another the same day start before it "
+            f"ended; more often than that rate: {_names(times, key, times['flagged'])}."
+        )
+        if min_minutes is not None:
+            line += f" Shorter than {min_minutes:g} minutes: {times.attrs['short_share']:.1%} of timed interviews."
+        lines.append(line)
 
     flag_columns = [column for column in table.columns if column.startswith("flag_")]
     for column in flag_columns:

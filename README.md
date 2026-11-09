@@ -7,8 +7,9 @@ Find data problems tied to interviewers in face-to-face surveys and survey exper
 
 An interviewer who invents interviews, copies them, or skips the randomization leaves traces. Three are common:
 estimates that depend on a handful of interviewers, treatment effects that differ by interviewer more than sampling
-noise allows, and answers that repeat within an interviewer's work more than local opinion explains. The package
-looks for those generic traces rather than for any particular pattern. You don't need to know what the problem looks
+noise allows, and answers that repeat within an interviewer's work more than local opinion explains. When the
+schedules record start and end times, there is a fourth: interviews that overlap the same interviewer's previous one,
+which one person cannot do. The package looks for those generic traces rather than for any particular pattern. You don't need to know what the problem looks
 like before you find it.
 
 Data go in and come out as pandas data frames. Every check returns one row per interviewer (or per interview), and
@@ -33,7 +34,9 @@ uv pip install -e .
 | `interviewer_similarity(df, items, interviewer, area)` | how close each interview's nearest twin among the same interviewer's work is, against shuffled interviewer labels | shuffle interviewer labels within area | interviewers whose interviews resemble each other |
 | `pattern_repetition(df, items, interviewer, area, strata=None)` | how many of an interviewer's interviews carry their most common full answer string, by stratum (e.g. arm) | shuffle interviewer labels within area × stratum | interviewers who write the same answers over and over |
 | `straightlining(df, items, interviewer, area)` | each interviewer's count of interviews that give one answer to every item | exact: a sum over areas of hypergeometric counts (the shuffle null in closed form) | interviewers who take the shortcut of one answer to everything |
-| `screen(df, interviewer, ...)` | runs whichever checks the columns allow | | one table with `flag_*` columns, plus a text summary |
+| `interview_clock(df, interviewer, start, end=None, duration=None, date=None)` | each interviewer's share of interviews that start before their own previous interview that day ended, against the survey-wide rate; also the busiest day, median length and share below a floor | exact one-sided binomial, with Bonferroni; the null is that every interviewer makes clock errors at the same rate | times that cannot all be true; two people under one id |
+| `clock_flags(df, interviewer, start, ...)` | the same comparison, one row per interview (`overlap`, `short`, `flagged`) | none (each overlap is a logical impossibility) | the rows behind `interview_clock` |
+| `screen(df, interviewer, ...)` | runs whichever checks the columns allow (the clock only when `start` is passed) | | one table with `flag_*` columns, plus a text summary |
 
 Each docstring spells out the mechanism, so `help(interviewer_checks.percent_match)` says exactly what is compared.
 
@@ -259,29 +262,30 @@ overall 65.2% straight-lined; flagged 20
      Sepri2-12-DASORATHGHOSH     242  0.908           0.719   6.071e-32
        Sepri1-17-GKMAHADEVAN     130  0.557           0.290   1.112e-25
 
-## interview clock (same interviewer, same village and day, overlapping start-end times)
-interviews overlapping an earlier one: 6.4%
-                              timed  overlap_share  busiest_day  median_minutes
-Sepri2-15-DAMODARBEHERA         435          0.598           28            60.0
-Sepri2-15-SURYAMANIMAHAPATRA    231          0.580           26            80.0
-Sepri1-17-SARUNRAJ              303          0.485           35            60.0
+## interview_clock (same interviewer, same village and day; over 4 hours counts as untimed)
+interviews that start before the same interviewer's previous one that day ended: 8.2% of those with a previous one; under 10 minutes: 0.1%; flagged 66
+                 interviewer  timed  overlap_share  max_per_day  median_minutes  p_adjusted
+Sepri2-15-SURYAMANIMAHAPATRA    231          0.687         26.0            80.0   3.809e-94
+     Sepri2-15-DAMODARBEHERA    435          0.679         28.0            60.0  1.754e-181
+          Sepri1-17-SARUNRAJ    303          0.568         35.0            60.0   6.567e-86
 
 ## by field team (wave-state): flags from the answers beside overlaps from the clock
              interviewers  similarity  repetition  straightlining  median_overlap
-Sepri1-17              55          28          32               4           0.043
-Sepri1-5               35          24          11               3           0.048
-Sepri1-14              33          18           6               1           0.079
-Sepri2-12              49          18           9               4           0.086
-Sepri1-13              26          16           0               2           0.114
-Sepri1-11              23          15           1               2           0.086
-Sepri2-15              36           9           6               1           0.084
-Sepri1-6               84           6           0               0           0.008
-Sepri1-7               48           3           0               2           0.011
-Sepri2-10              80           3           0               0           0.009
-Sepri1-16              58           1           0               1           0.011
-Sepri2-3               40           0           0               0           0.005
-Sepri2-4               28           0           0               0           0.008
-Spearman correlation, similarity excess vs clock overlap, across interviewers: 0.30
+interviewer                                                                      
+Sepri1-17              55          28          32               4           0.057
+Sepri1-5               35          24          11               3           0.060
+Sepri1-14              33          18           6               1           0.100
+Sepri2-12              49          18           9               4           0.103
+Sepri1-13              26          16           0               2           0.153
+Sepri1-11              23          15           1               2           0.110
+Sepri2-15              36           9           6               1           0.125
+Sepri1-6               84           6           0               0           0.009
+Sepri1-7               48           3           0               2           0.014
+Sepri2-10              80           3           0               0           0.014
+Sepri1-16              58           1           0               1           0.016
+Sepri2-3               40           0           0               0           0.006
+Sepri2-4               28           0           0               0           0.011
+Spearman correlation, similarity excess vs clock overlap, across interviewers: 0.29
 ```
 
 What this shows:
@@ -301,8 +305,10 @@ What this shows:
   the answer checks. It counts interviews that begin before the same interviewer's previous interview that day has
   ended. One person cannot do two interviews at once, so either the times were not written down as the interviews
   happened or more than one person worked under the name. Seven state teams (wave-state codes 17, 5, 14, 12, 13,
-  11, 15) hold 128 of the 141 similarity flags and 65 of the 65 repetition flags, and their median overlap is
-  4-11%. The other six teams have 13 similarity flags and about 1% overlap. One row-level example: on its busiest
+  11, 15) hold 128 of the 141 similarity flags and 65 of the 65 repetition flags. Their median interviewer overlaps
+  the previous interview in 6-15% of interviews that follow another the same day. The other six teams have 13
+  similarity flags and a median overlap of 0.6-1.6%. `interview_clock` flags 66 interviewers whose overlap rate is
+  above the survey-wide 8.2%. One row-level example: on its busiest
   day SARUNRAJ logs 35 interviews. Five consecutive households share the slot 07:10-07:50, the others start on
   whole hours with two or three per hour from 07:00 to 20:00, and the food-security answers barely vary.
 - **Straight-lining is mostly genuine but uneven.** 65% of households answer "never" to all nine hunger items. Twenty
@@ -317,6 +323,157 @@ these data can rerun its estimates without those teams, or with interviewer fixe
 No published estimate on this machine can be checked against these flags. Munshi and Rosenzweig (2016, *AER*,
 openICPSR 112956) use the 2006 REDS listing. That round was collected by different field staff, so flags in the
 2013-14 rounds say nothing about it. Jensenius (2015, *AEJ: Applied*, openICPSR 113613) uses census village data.
+
+## Case study: Beaman, Duflo, Pande and Topalova (2012)
+
+West Bengal reserves the post of village-council head (pradhan) for a woman in a rotating, effectively random set
+of councils. Beaman et al. surveyed 3,680 adolescents in 165 councils of Birbhum district in 2006 and report that,
+in councils reserved twice, the gap between girls' and boys' aspirations shrank by 0.166 standard deviations
+(Table 2, SE 0.057). [`examples/beaman_west_bengal.py`](examples/beaman_west_bengal.py) reads J-PAL's public files
+(Harvard Dataverse, doi:10.7910/DVN/O3UKFO); they are not distributed with this package.
+
+```bash
+uv run python examples/beaman_west_bengal.py path/to/beaman/data   # about 10 seconds
+```
+
+What the data hold, and the choices that follow:
+
+- **Interviewers.** The adolescent schedule records an interviewer code (`AA0_9_1`): 27 codes, 19 with 80-280
+  interviews and 8 with fewer than 20. The household survey uses a separate set of codes (1-55), so the two
+  surveys' interviewers cannot be linked. The design nests block (19) > council (`AA0_2b`, 162 matched) > village
+  (council plus `AA0_3b`, 490). Interviewers cross blocks and councils (a median council has two), but 87% of
+  villages were worked by one interviewer.
+- **Outcomes.** The paper's normalized index averages four yes/no aspirations, each standardized by the
+  never-reserved mean and SD. Three follow the earlier replication in `quota_aspirations`: not wanting to be a
+  housewife or do what in-laws want (`B1_3`), wanting to marry after 18 (`B1_2`), wanting to graduate (`B1_1`). The
+  fourth, wanting a job that needs an education, has no code. The script reads it from the free-text occupation:
+  teacher, doctor, engineer, professor, lawyer, IPS, officer, manager. That list reproduces the paper's
+  never-reserved means (0.154 and 0.162 against 0.157 and 0.166). Adding nurses raises the girls' share to 0.21, so
+  the paper probably left them out. 38 adolescents have no recorded sex and are dropped.
+- **Estimate.** The paper's coefficient comes from an OLS regression with village controls. The script takes the
+  saturated difference in differences of cell means, which is that regression without the controls. Its standard
+  error is a delete-one-council jackknife (`cluster_influence` over councils).
+- **Parents.** The paper's Table 1 (parents' aspirations, 0.136) uses a module that is not in the public files.
+
+Output (verbatim, with the clock table abridged):
+
+```
+3,642 adolescents, 19 blocks, 162 councils, 490 villages, 27 interviewers (median 168 interviews; 8 with fewer than 20)
+councils by arm: {'never': 72, 'once': 70, 'twice': 20}; villages with one interviewer: 87%; councils with one interviewer: 23%
+
+## replication: never-reserved means and the twice-reserved change in the girl-boy gap (Table 2)
+       outcome  boys_paper  boys  girls_paper  girls  change_paper  change  se_paper  se_gp_jackknife
+  no_housewife       0.998 0.998        0.600  0.580         0.075   0.094     0.042            0.044
+  educated_job       0.157 0.154        0.166  0.162         0.099   0.102     0.051            0.048
+marry_after_18       0.980 0.980        0.660  0.656         0.085   0.092     0.049            0.052
+      graduate       0.296 0.290        0.195  0.190         0.001   0.017     0.045            0.047
+         index       0.248 0.252       -0.260 -0.261         0.166   0.188     0.057            0.057
+
+## assignment_balance (one row per interviewer x council; twice-reserved against never-reserved)
+23.5% of interviewer x council pairs twice-reserved; chi2 = 30.9 on 24 df, p = 0.155; flagged 0
+interviewer  units  treated  share_treated  expected_treated  p_value  p_adjusted
+         61      5        4          0.800             1.176    0.012       0.311
+         96     11        0          0.000             2.588    0.078       1.000
+        100      8        0          0.000             1.882    0.211       1.000
+         79      9        4          0.444             2.118    0.229       1.000
+        109      1        1          1.000             0.235    0.235       1.000
+ever reserved against never, all councils: 57.6%; chi2 = 28.4 on 26 df, p = 0.340
+
+## effect_heterogeneity (girl-boy gap in the index per interviewer x council; twice vs never)
+194 cells; 12 interviewers with at least two cells in each arm. Pooled change 0.258 (SE 0.112; 0.110 clustered by interviewer); Cochran's Q = 32.1 on 11 df, p = 0.001; flagged 1
+ interviewer  treated  control  effect    se      z  p_adjusted
+          81        3        6   1.056 0.211  3.785       0.002
+          83        4        7  -0.517 0.284 -2.724       0.077
+          80        3        5   0.044 0.121 -1.762       0.937
+         107        3        4  -0.217 0.274 -1.731       1.000
+         103        3        5   0.618 0.310  1.163       1.000
+exact relabeling test for 81: p = 0.071; Bonferroni over 12: 0.86
+Cochran's Q against relabeling within interviewer: p = 0.182
+
+## cluster_influence (headline change in the gap, each interviewer left out)
+full 0.188; interviewer-jackknife SE 0.073; council-jackknife SE 0.057; range without one interviewer 0.159 to 0.246
+interviewer  rows  estimate_without  shift  shift_in_se
+         83   191             0.246  0.058        0.799
+         81   197             0.159 -0.029       -0.397
+        107    97             0.206  0.018        0.253
+         98   283             0.169 -0.018       -0.250
+         68   247             0.173 -0.014       -0.197
+
+## percent_match within village (31 closed-ended items; chance from village marginals)
+best match >= 0.85: 9.4%; exact-duplicate pairs: 1; beyond chance (independent items): 16
+flagged interviews by interviewer: {96: 4, 103: 2, 79: 2, 110: 2, 106: 2, 101: 2, 80: 2}
+
+## interviewer_similarity (area = village)
+pooled excess +0.0255 (p = 0.0001); 84% of interviews in single-interviewer villages are not tested; flagged 4
+interviewer  tested  nearest_own  nearest_other  excess  p_adjusted
+         84      31        0.798          0.601   0.048       0.002
+         79      30        0.735          0.593   0.047       0.012
+        102      46        0.696          0.633   0.036       0.024
+         68      45        0.719          0.597   0.042       0.038
+         81      19        0.729          0.635   0.070       0.185
+
+## interviewer_similarity (area = gp)
+pooled excess +0.0333 (p = 0.0001); 21% of interviews in single-interviewer gps are not tested; flagged 14
+interviewer  tested  nearest_own  nearest_other  excess  p_adjusted
+        109      13        0.787          0.680   0.087       0.003
+        106      96        0.803          0.708   0.068       0.003
+         84      83        0.742          0.667   0.065       0.003
+         82     122        0.778          0.680   0.057       0.003
+         81     151        0.771          0.693   0.055       0.003
+
+## interview_clock (same interviewer and day; 5 minutes or less is short; over 4 hours untimed)
+timed 99.3%; overlapping the previous interview that day: 3.5%; 5 minutes or less: 12.4%; flagged 0; start and end minutes on a multiple of 5: 82%, 80%
+ interviewer  interviews  timed  follows  overlaps  overlap_share  max_per_day  median_minutes  short_share  p_value  p_adjusted  flagged
+          84          83     82       47         6          0.128          8.0            15.0        0.000    0.006       0.147    False
+         101         206    204      128        11          0.086         10.0            10.0        0.049    0.005       0.139    False
+          82         168    166      100         6          0.060          7.0            10.0        0.072    0.137       1.000    False
+          80         228    228      137         8          0.058          7.0            15.0        0.044    0.107       1.000    False
+         104         211    209      128         7          0.055          7.0             5.0        0.603    0.160       1.000    False
+         ...
+         110         138    137       81         2          0.025          6.0             5.0        0.788    0.778       1.000    False
+         ...
+interviewers with most interviews at 5 minutes or less: [104, 110]; headline change without them: 0.190 (3,293 rows)
+```
+
+What this shows:
+
+- **The replication is close but not exact.** The never-reserved means match the paper to within 0.02, and the
+  standard error matches (0.057). The headline change is 0.188 against the published 0.166, a gap of 0.4 SE. The
+  likely sources are the missing village controls and the free-text housewife coding (girls 0.580 against 0.600).
+  So the variables are right; the point estimate is a little larger without controls.
+- **(a) Interviewers are balanced across arms.** Treatment is assigned to councils, so each interviewer x council
+  pair is one unit. No interviewer's share of twice-reserved councils survives correction (lowest adjusted p 0.31),
+  and the interviewer x arm table is unremarkable (p = 0.16; p = 0.34 for ever- against never-reserved). Two large
+  interviewers (96 with 11 councils, 100 with 8) never worked a twice-reserved council. That fits chance, given
+  that only 20 councils were reserved twice. It does mean those interviewers contribute nothing to the within-
+  interviewer contrast.
+- **(b) No reliable interviewer heterogeneity, and no interviewer carries the result.** On the face of it, Q = 32.1
+  on 11 df (p = 0.001) and interviewer 81 survives Bonferroni (z = 3.8). Both rest on standard errors computed from
+  three or four councils per arm, and those are too noisy for a normal reference. Relabeling which of an
+  interviewer's councils count as twice-reserved, with the pooled effect removed, gives p = 0.07 for interviewer 81
+  (0.86 after correction) and p = 0.18 for Q. The synthetic tests do not cover this regime, a few units per arm;
+  that is a limitation of `effect_heterogeneity`'s z, not a finding about the survey. Leaving out any one interviewer
+  keeps the headline between 0.159 and 0.246, at least 2.8 council-jackknife SEs from zero. The largest shifts are 83
+  (+0.058) and 81 (−0.029), and they pull in opposite directions.
+- **(c) Answer similarity is weak, and where it is testable it is not specific.** Within villages, 9.4% of
+  adolescents have a best match of 0.85 or more over 31 items, only one pair is an exact duplicate, and 16 interviews
+  match beyond chance, spread over seven interviewers. `interviewer_similarity` is the binding constraint: 87% of
+  villages had one interviewer, so a within-village comparison tests only 16% of interviews. It flags 4 interviewers
+  (84, 79, 102, 68). With the council as the area it tests 79% of interviews and flags 14 of 27. That comparison also
+  absorbs village differences inside a council, so it is a ranking, as with the district-level run on the Pakistan
+  data, not evidence of copying.
+- **(d) The clock is mostly consistent, but it is coarse.** Of interviews that follow another the same day, 3.5%
+  start before the previous one ended; no interviewer exceeds that rate after correction (84 is highest at 12.8%,
+  adjusted p 0.15). Times are mostly rounded to five minutes (82% of start minutes), so the check cannot see
+  overlaps shorter than that. The distinctive pattern is length. Interviewers 104 and 110 log 60% and 79% of their
+  interviews at five minutes or less (median 5), against a survey median of 10. The schedule has at least 31 closed
+  questions plus the occupation and time-use follow-ups, so that is fast but not impossible, and the heaping suggests lengths were written from memory. Dropping both
+  leaves the headline at 0.190.
+
+What this does not show: that anything in these data was invented. On this evidence, the twice-reserved result does
+not rest on any one interviewer, interviewers were not steered toward or away from reserved councils, and the
+clocks raise only two very fast interviewers, whose removal changes nothing. The design limits what the answer
+checks can say. With one interviewer per village, interviewer and village cannot be separated below the council.
 
 ## What the tests establish
 
@@ -338,6 +495,10 @@ respondents resemble each other and items are correlated. The fixture is [`tests
 - **Whole-interview copying.** When copiers fill 40% of their interviews by copying their own earlier interviews with
   5% of answers changed, `interviewer_similarity` flags them and nobody else. Most interviews flagged by
   `percent_match` belong to the copiers, and in every such case the best partner has the same interviewer.
+- **Clock.** In simulated paper schedules (40-minute interviews an hour apart, 2% honest slips of half an hour), an
+  interviewer who logs a new interview every 25 minutes is flagged and nobody else is. Back-to-back interviews, where
+  one ends the minute the next begins, raise nothing. A hand-built case checks that an interview overlapping an
+  earlier, longer one is caught even when the interview just before it had ended.
 - **Expected agreement.** With eight lopsided binary items, the raw 85% rule flags nearly everyone, while the
   expected-agreement test flags no one.
 
@@ -383,7 +544,7 @@ signal alone is ambiguous and the two together are hard to explain innocently.
   (DeMatteis et al. 2020) set out the practice standard of prevention, detection by data and process checks, and
   repair. Murphy et al. (2016, *Statistical Journal of the IAOS* 32(3): 313–326) review current practice. Murphy et
   al. (2004, *Proceedings of the ASA Survey Research Methods Section*, 4968–4975) describe a system for detecting
-  falsification from interviewer-level indicators. `screen` is that idea reduced to statistics that don't need paradata.
+  falsification from interviewer-level indicators. `screen` is that idea reduced to statistics that need no paradata beyond start and end times.
 - Schräpler and Wagner (2005, *Allgemeines Statistisches Archiv* 89(1): 7–20) study real faked interviews found in
   the SOEP raw data. Schräpler (2011, *Jahrbücher für Nationalökonomie und Statistik* 231(5–6): 685–718) uses
   Benford's-law digit tests to find them. Digit tests suit continuous answers such as incomes. This package works with categorical items, so it has no
@@ -396,6 +557,15 @@ signal alone is ambiguous and the two together are hard to explain innocently.
 - Blasius and Thiessen (2012, *Assessing the Quality of Survey Data*; 2015, *Social Science Research* 52: 479–493)
   show that fabrication and simplified response behaviour leave undifferentiated answers and duplicated response
   patterns. These correspond to `straightlining` and `pattern_repetition`.
+- Timestamps are the oldest process check. Bushery, Reichert, Albright and Rossiter (1999, *Proceedings of the ASA
+  Survey Research Methods Section*, 316–320) used the date and time stamps of Census Bureau CATI interviews to find
+  interviewers who falsify. (That citation comes from the reference list of Schwanhäuser et al. 2022; the paper
+  itself could not be retrieved.) Murphy et al. (2004) added question-level timings to NSDUH's detection system.
+  Birnbaum, Borriello, Flaxman, DeRenzi and Karlin (2013, *Proceedings of CHI*, 2911–2920) classify fabricated
+  interviews from the event logs of phone-based questionnaires. Schwanhäuser, Sakshaug and Kosyakova (2022) find
+  interview duration among the most useful indicators against known falsifiers. `interview_clock` works with what
+  paper schedules record, a start and end time per interview: overlaps that one person cannot produce, crowded days,
+  and short interviews.
 - Kuriakose and Robbins (2016, *Statistical Journal of the IAOS* 32(3): 283–291) propose the maximum percent match
   with an 85% threshold. Simmons, Mercer, Schwarzer and Kennedy (2016, same issue, 327–338) show that high matches
   arise in valid data and depend on survey design. `percent_match` implements the statistic and replaces the
@@ -423,8 +593,10 @@ categorical.
   grounds that fabricated trials are too balanced or not balanced enough. That is `assignment_balance` at the
   interviewer level.
 
-**The case study.** Blair, Fair, Malhotra and Shapiro (2013), "Poverty and Support for Militant Politics: Evidence
-from Pakistan," *American Journal of Political Science* 57(1): 30–48.
+**The case studies.** Blair, Fair, Malhotra and Shapiro (2013), "Poverty and Support for Militant Politics: Evidence
+from Pakistan," *American Journal of Political Science* 57(1): 30–48. Beaman, Duflo, Pande and Topalova (2012),
+"Female Leadership Raises Aspirations and Educational Attainment for Girls: A Policy Experiment in India,"
+*Science* 335(6068): 582–586.
 
 ## Development
 

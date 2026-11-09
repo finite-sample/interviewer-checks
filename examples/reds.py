@@ -12,7 +12,13 @@ import sys
 import numpy as np
 import pandas as pd
 
-from interviewer_checks import interviewer_similarity, pattern_repetition, percent_match, straightlining
+from interviewer_checks import (
+    interview_clock,
+    interviewer_similarity,
+    pattern_repetition,
+    percent_match,
+    straightlining,
+)
 
 pd.set_option("display.width", 120)
 pd.set_option("display.max_columns", 20)
@@ -117,24 +123,6 @@ def twins_by_distance(df: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
-def clock(df: pd.DataFrame) -> pd.DataFrame:
-    """Per interviewer: interviews that start before the same interviewer's previous one that day had ended.
-
-    One person cannot hold two interviews at once, so overlap means the times were not written as the interviews
-    happened, or that more than one person worked under the name.
-    """
-    timed = df[(df["end"] > df["start"]) & (df["end"] - df["start"] <= 240)]
-    timed = timed.sort_values(["interviewer", "village_id", "day", "start"])
-    previous_end = timed.groupby(["interviewer", "village_id", "day"])["end"].transform(lambda s: s.cummax().shift())
-    timed = timed.assign(overlap=timed["start"] < previous_end, minutes=timed["end"] - timed["start"])
-    return timed.groupby("interviewer").agg(
-        timed=("overlap", "size"),
-        overlap_share=("overlap", "mean"),
-        busiest_day=("day", lambda days: days.value_counts().max()),
-        median_minutes=("minutes", "median"),
-    )
-
-
 def main(root: str) -> None:
     df = load(root)
     per_village = df.groupby("village_id")["interviewer"].nunique()
@@ -181,10 +169,24 @@ def main(root: str) -> None:
     columns = ["interviewer", "tested", "share", "expected_share", "p_adjusted"]
     print(straight.sort_values("p_value").head(8)[columns].to_string(index=False), "\n")
 
-    print("## interview clock (same interviewer, same village and day, overlapping start-end times)")
-    times = clock(df)
-    print(f"interviews overlapping an earlier one: {np.average(times['overlap_share'], weights=times['timed']):.1%}")
-    print(times.sort_values("overlap_share", ascending=False).query("timed >= 100").head(8).to_string(), "\n")
+    print("## interview_clock (same interviewer, same village and day; over 4 hours counts as untimed)")
+    times = interview_clock(
+        df, "interviewer", "start", end="end", date=["village_id", "day"], min_minutes=10, max_minutes=240
+    )
+    a = times.attrs
+    print(
+        f"interviews that start before the same interviewer's previous one that day ended: {a['overlap_share']:.1%} "
+        f"of those with a previous one; under 10 minutes: {a['short_share']:.1%}; flagged {times['flagged'].sum()}"
+    )
+    columns = ["interviewer", "timed", "overlap_share", "max_per_day", "median_minutes", "p_adjusted"]
+    print(
+        times.sort_values("overlap_share", ascending=False)
+        .query("timed >= 100")
+        .head(8)[columns]
+        .to_string(index=False)
+    )
+    print()
+    times = times.set_index("interviewer")
 
     print("## by field team (wave-state): flags from the answers beside overlaps from the clock")
     flags = pd.DataFrame(
