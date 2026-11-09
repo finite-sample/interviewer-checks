@@ -1,0 +1,73 @@
+[project]
+name = "interviewer-checks"
+version = "0.1.0"
+description = "Find data problems tied to interviewers in surveys and survey experiments"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Gaurav Sood", email = "contact@gsood.com" }]
+requires-python = ">=3.11"
+keywords = [
+    "survey",
+    "survey experiment",
+    "interviewer effects",
+    "interviewer falsification",
+    "curbstoning",
+    "data fabrication",
+    "near duplicates",
+    "percent match",
+    "data quality",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Sociology",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/finite-sample/interviewer-checks"
+Repository = "https://github.com/finite-sample/interviewer-checks"
+Issues = "https://github.com/finite-sample/interviewer-checks/issues"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "black>=26.10.1",
+    "flake8>=7.5.0",
+    "isort>=9.0.2",
+    "pytest>=9.2.0",
+]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["interviewer_checks"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = ["--strict-config", "--strict-markers", "-ra"]
+filterwarnings = [
+    "error",
+    # pandas 2.2 (the dependency floor) announces at import that pandas 3 will need pyarrow.
+    'ignore:\s*Pyarrow will become a required dependency:DeprecationWarning',
+]
