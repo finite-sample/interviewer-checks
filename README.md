@@ -146,14 +146,14 @@ Output (verbatim):
 5,444 respondents, 75 interviewers
 
 ## effect_heterogeneity (long format, SEs clustered on respondent)
-pooled ATE -0.013 (SE 0.005); Cochran's Q = 118.0 on 59 df, p = 0.0001 (permutation, smallest arm 7); zero standard error: [33, 35]
+pooled ATE -0.013 (SE 0.005); Cochran's Q = 118.0 on 59 df, p = 0.0003 (permutation, smallest arm 7); zero standard error: [33, 35]
  interviewer  respondents  treated  control  effect    se     z   p_value  p_adjusted  flagged
           35           12        4        8   0.000 0.000   inf       NaN         NaN    False
           33           12        4        8   0.000 0.000   inf       NaN         NaN    False
-          71           51       17       34   0.057 0.010 7.096 1.000e-04   1.000e-04     True
-          37          160       60      100   0.082 0.024 4.002 2.000e-04   3.090e-02     True
-           7          101       48       53   0.037 0.021 2.349 2.340e-02   8.161e-01    False
-without 7, 37, 71: ATE -0.021; Q = 52.6 on 56 df, p = 0.756 (permutation)
+          71           51       17       34   0.057 0.010 7.096 5.000e-05   1.000e-04     True
+          37          160       60      100   0.082 0.024 4.002 4.000e-04   2.995e-02     True
+           7          101       48       53   0.037 0.021 2.349 2.290e-02   8.134e-01    False
+without 7, 37, 71: ATE -0.021; Q = 52.6 on 56 df, p = 0.754 (permutation)
 
 ## pattern_repetition (strings over the four policies, by arm, shuffled within district)
  interviewer  tested  repeated_share  expected_share  p_adjusted                     modal_by_stratum
@@ -170,12 +170,12 @@ flagged: [7, 10, 12, 22, 24, 29, 37, 41, 44, 45, 55, 56, 61, 63, 66, 71]
 ## screen (one row per interview; outcome = mean support over the four policies)
 75 interviewers, 5,444 interviews.
 Areas (district): 50, 0% worked by a single interviewer.
-Pooled effect -0.013 (SE 0.005; 0.007 clustered by interviewer). Heterogeneity across interviewers: Q = 118.0 on 59 df, p = 0.0001 (permutation). Interviewer effects off the pooled one: 37, 71. No variation in the outcome: 33, 35.
+Pooled effect -0.013 (SE 0.005; 0.007 clustered by interviewer). Heterogeneity across interviewers: Q = 118.0 on 59 df, p = 0.00025 (permutation). Interviewer effects off the pooled one: 37, 71. No variation in the outcome: 33, 35.
 Leaving one interviewer out moves the effect most for 37 (-0.0047, -0.7 jackknife SE), 66 (+0.0022, +0.3 jackknife SE), 71 (-0.0018, -0.3 jackknife SE).
 Assignment: 49.2% treated overall; interviewer x treatment chi2 = 76.3 on 74 df, p = 0.404. Lopsided interviewers: none.
-Repeated answer strings beyond what the area produces: 7, 10, 12, 22, 24, 29, 37, 41, 44, 45, 55, 56, 61, 63, 66, 71.
+Repeated answer strings beyond what the area produces: 7, 10, 12, 22, 24, 29, 37, 41, 44, 45, 46, 55, 56, 61, 63, 66, 71.
 Straight-lining (21.1% of interviews overall) above the area rate: 3, 11, 15, 23, 26, 32, 33, 41, 57, 60, 62, 66.
-Flagged by two or more checks: 33, 37, 41, 66, 71.
+Flagged by two or more checks: 33, 37, 41, 66, 71. 
 
 interviewer  interviews  effect_z  ate_shift  share_treated  repeated_share                         flags
          33          12       inf  3.560e-04          0.333           0.000 zero_variance, straightlining
@@ -185,7 +185,7 @@ interviewer  interviews  effect_z  ate_shift  share_treated  repeated_share     
          71          51     7.096 -1.823e-03          0.333           0.843            effect, repetition
           3         279    -0.497 -1.338e-03          0.523           0.014                straightlining
           7         101     2.349 -1.142e-03          0.475           0.594                    repetition
-         10          60     0.744 -5.546e-05          0.400           0.183                    repetition
+         10          60     0.744 -5.546e-05          0.400           0.183                    repetition 
 
 ## percent_match over the whole questionnaire (chance agreement from sampling-point marginals)
 92 items; best match >= 0.85: 40.5%; exact-duplicate pairs: 175; beyond chance (independent items): 940
@@ -196,14 +196,16 @@ What the generic checks find, and what they miss:
 
 - **Treatment-effect heterogeneity is the strongest signal.** Interviewers differ in their effects more than noise
   allows (Q = 118.0 on 59 df). The smallest tested interviewer has 7 respondents in an arm, so the test shuffles
-  treatment within interviewer, and no shuffle in 9,999 reaches the observed Q (p = 0.0001, the smallest attainable).
-  The two most extreme interviewers, 71 and 37, survive the max-T correction over 60 interviewers (adjusted p = 0.0001
-  and 0.03). Interviewer 7 is next (z = 2.3, unadjusted p = 0.02), but not once you correct for looking at 60
+  treatment within interviewer; 4 of 19,999 shuffles reach the observed Q (p = 0.0003). The two most extreme
+  interviewers, 71 and 37, survive the max-T correction over 60 interviewers (adjusted p = 0.0001 and 0.03). Interviewer 7 is next (z = 2.3, unadjusted p = 0.02), but not once you correct for looking at 60
   interviewers. Without 7, 37 and 71, the pooled effect moves from −0.013 to −0.021 and the heterogeneity disappears
   (Q = 52.6 on 56 df, p = 0.76). Interviewers 33 and 35 have zero standard error: every respondent's answers equal
   their arm's mean, so neither interviewer has any respondent-to-respondent variation. Both runs drop the 35
   respondents who got both endorsed and unendorsed items, because they belong to neither arm and the shuffle moves
-  whole respondents. (With them kept, the chi-square run gave Q = 93.1 and p = 0.003.)
+  whole respondents. Keeping them lowers Q to 93.1, almost entirely because of one respondent of interviewer 71,
+  recorded as 4-1-0-4 with one policy unendorsed: interviewer 71's other answers vary so little that this one
+  interview raises their standard error by 37%. The paper's R code gives the same Q and a matching permutation
+  reference (8 of 20,000 reshuffles reach 118.0 in both implementations).
 - **Repeated strings point at the same three interviewers but are not specific here.** 71, 7 and 37 record 4-0-0-4 in
   58–94% of their control interviews and 4-1-0-4 in 55–65% of their treated ones. No other interviewer has
   arm-specific strings like these. Still, 16 interviewers are flagged, because the shuffle is within district while

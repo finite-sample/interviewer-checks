@@ -66,7 +66,10 @@ def main(path: str) -> None:
     print(f"{len(long) // 4:,} respondents, {interviews['interviewer'].nunique()} interviewers\n")
 
     print("## effect_heterogeneity (long format, SEs clustered on respondent)")
-    effects = effect_heterogeneity(long, "response", "endorsed", "interviewer", respondent="respondent", seed=0)
+    # 19,999 shuffles resolve a p-value near 0.0005; 9,999 often see no shuffle at or above the observed Q.
+    effects = effect_heterogeneity(
+        long, "response", "endorsed", "interviewer", respondent="respondent", n_permutations=19_999, seed=0
+    )
     a = effects.attrs
     print(
         f"pooled ATE {a['effect']:.3f} (SE {a['se']:.3f}); Cochran's Q = {a['q']:.1f} on {a['df']} df, "
@@ -82,6 +85,7 @@ def main(path: str) -> None:
         "endorsed",
         "interviewer",
         respondent="respondent",
+        n_permutations=19_999,
         seed=0,
     ).attrs
     print(
@@ -104,6 +108,7 @@ def main(path: str) -> None:
         area="district",
         treatment="treated",
         outcome="support",
+        n_permutations=19_999,
         seed=0,
     )
     print(result.summary, "\n")
