@@ -119,7 +119,7 @@ def _cluster_effects(
 
 
 def _q_statistic(effects: np.ndarray, se: np.ndarray) -> np.ndarray:
-    """Cochran's Q along the last axis, with its inverse-variance weighted centre; a zero SE makes Q infinite."""
+    """Cochran's Q along the last axis, with its inverse-variance weighted center; a zero SE makes Q infinite."""
     with np.errstate(divide="ignore", invalid="ignore"):
         weights = 1.0 / se**2
         centre = np.sum(weights * effects, axis=-1) / np.sum(weights, axis=-1)
@@ -191,7 +191,7 @@ def effect_heterogeneity(
     The heterogeneity statistic is Cochran's Q, the standard one from meta-analysis: weight each tested cluster's
     effect by its inverse variance, take the weighted mean (``centre``), and sum the weighted squared deviations from
     it. (Summing the squared ``z`` against the pooled difference in means gives a slightly larger number, because the
-    weighted mean is the centre that minimizes the sum.) Q is judged in one of two ways:
+    weighted mean is the center that minimizes the sum.) Q is judged in one of two ways:
 
     - ``"chi2"``: against a chi-square with one fewer degree of freedom than tested clusters, and each ``z`` against
       a normal with a Bonferroni correction. Both treat the standard errors as known, which is close to true only

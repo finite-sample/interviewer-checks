@@ -45,7 +45,7 @@ Each docstring spells out the mechanism, so `help(interviewer_checks.percent_mat
 **Nulls condition on area.** People who live near each other answer alike. If interviewers work in different areas,
 "interviewer X's answers are unusual" may just mean that X works somewhere unusual. So every interviewer-level null
 shuffles interviewer labels *within* an area and keeps how many interviews each interviewer did there. That way an
-interviewer is compared only with neighbours who interviewed the same population.
+interviewer is compared only with neighbors who interviewed the same population.
 
 The weak point is that an area worked by a single interviewer can't be shuffled. There, interviewer and area are the
 same thing, and no data-only check can tell them apart. Each check reports `single_interviewer_areas` and
@@ -246,7 +246,7 @@ Three choices shape the results, and each is open to dispute:
   (including nine never/rarely/sometimes/often hunger items), and the head's caste group, religion and job card.
 - **The area.** Interviewers share villages, which is the design these checks need, but within a village each one
   took short runs of the street-ordered listing, about six households at a time. Own interviews are therefore nearer
-  neighbours than other interviewers' interviews in the same village. The area is a 50-household stretch of the
+  neighbors than other interviewers' interviews in the same village. The area is a 50-household stretch of the
   listing, so the shuffle compares an interviewer only with colleagues on the same few streets. That narrows the
   geographic gap but cannot close it.
 
@@ -311,14 +311,14 @@ Spearman correlation, similarity excess vs clock overlap, across interviewers: 0
 What this shows:
 
 - **Raw percent match is uninformative here.** 97% of households have a best match of at least 0.85, and 279,583
-  pairs agree on all 30 items, because neighbouring households in a village share housing, water, caste and (mostly)
+  pairs agree on all 30 items, because neighboring households in a village share housing, water, caste and (mostly)
   no hunger. Judged against expected agreement, only 23 households stand out, all in one village. Their rows look
   genuine rather than copied: the first pair has consecutive listing numbers and was interviewed back to back by
   the same interviewer (9:00-9:30, 9:35-10:00). That is what two households in one compound look like.
 - **Twins concentrate within interviewers at a fixed distance.** Households a few listing places apart are 2.5-2.9
   times as likely to be exact twins when one interviewer did both. The excess shrinks with distance and vanishes
   beyond 100 places, so it is not a fixed interviewer style. It is either geography that the listing distance
-  misses (runs ending at lane boundaries) or interviewers filling in neighbouring households from one visit.
+  misses (runs ending at lane boundaries) or interviewers filling in neighboring households from one visit.
   Among pairs within ten places, two interviewers working the same day produce twins 0.9% of the time; one
   interviewer on one day produces them 5.1% of the time.
 - **The answer checks and the clock point to the same field teams.** The clock check shares no code or data with
@@ -498,7 +498,7 @@ checks can say. With one interviewer per village, interviewer and village cannot
 
 ## What the tests establish
 
-The tests simulate surveys in which answers depend on area-level opinion and a respondent trait, so neighbouring
+The tests simulate surveys in which answers depend on area-level opinion and a respondent trait, so neighboring
 respondents resemble each other and items are correlated. The fixture is [`tests/synthetic.py`](tests/synthetic.py).
 
 - **Specificity.** On clean surveys, the share of per-interviewer p-values below 0.05 is close to 5%: 4.8% for
@@ -582,7 +582,7 @@ signal alone is ambiguous and the two together are hard to explain innocently.
   psychology of answering. Schwanhäuser, Sakshaug and Kosyakova (2022, *POQ* 86(1): 51–81) compare such methods
   against known falsifiers. `screen`'s per-interviewer table is the input such a multivariate step would use.
 - Blasius and Thiessen (2012, *Assessing the Quality of Survey Data*; 2015, *Social Science Research* 52: 479–493)
-  show that fabrication and simplified response behaviour leave undifferentiated answers and duplicated response
+  show that fabrication and simplified response behavior leave undifferentiated answers and duplicated response
   patterns. These correspond to `straightlining` and `pattern_repetition`.
 - Timestamps are the oldest process check. Bushery, Reichert, Albright and Rossiter (1999, *Proceedings of the ASA
   Survey Research Methods Section*, 316–320) used the date and time stamps of Census Bureau CATI interviews to find

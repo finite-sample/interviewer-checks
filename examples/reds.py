@@ -94,7 +94,7 @@ def load(root: str) -> pd.DataFrame:
 def twins_by_distance(df: pd.DataFrame) -> pd.DataFrame:
     """Exact 30-item twins among pairs in a village, by listing distance and whether the interviewer is shared.
 
-    If neighbours were simply alike, the twin rate would fall with distance in the same way for both kinds of
+    If neighbors were simply alike, the twin rate would fall with distance in the same way for both kinds of
     pair. A same-interviewer excess at a fixed distance is what the interviewer adds.
     """
     strings = df.groupby(ITEMS, dropna=False).ngroup().to_numpy()

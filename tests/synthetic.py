@@ -36,7 +36,7 @@ def make_survey(
     """One row per interview: interviewer, area, treated, questionnaire items q*, battery p1-p4 (0-4), support.
 
     Answers come from an ordered-probit-like rule: latent = area shift (per item) + loading * respondent trait +
-    noise, cut into ``categories`` bins, so items correlate through the trait and neighbours resemble each other
+    noise, cut into ``categories`` bins, so items correlate through the trait and neighbors resemble each other
     through the area. Treatment shifts the battery's latent values by ``effect``; a higher ``battery_level``
     piles genuine answers up at the top of the scale, as in the Pakistan data.
 
