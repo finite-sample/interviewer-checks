@@ -191,7 +191,7 @@ def percent_match(
 def _shared_areas(area_codes: np.ndarray, interviewer_codes: np.ndarray) -> tuple[np.ndarray, dict[str, float]]:
     """Which interviews sit in an area worked by two or more interviewers, and how much of the data that is.
 
-    Only those interviews can be compared with a neighbour; in a single-interviewer area, interviewer and area are
+    Only those interviews can be compared with a neighbor; in a single-interviewer area, interviewer and area are
     the same thing and no within-area check can separate them.
     """
     per_area = pd.Series(interviewer_codes).groupby(area_codes).nunique()
@@ -226,7 +226,7 @@ def interviewer_similarity(
 
     The null shuffles interviewer labels among the interviews of each area, keeping how many interviews each
     interviewer did there, and recomputes each interviewer's mean ``nearest_own``. Because the shuffle stays inside the
-    area, local opinion (which makes neighbours alike) and the number of own interviews (more candidates give a
+    area, local opinion (which makes neighbors alike) and the number of own interviews (more candidates give a
     higher best match) are the same under the null as in the data. ``expected`` is the null mean, ``excess`` the
     observed minus expected, ``p_value`` the share of shuffles at least as large, and ``flagged`` applies a Bonferroni
     correction across tested interviewers.
@@ -378,7 +378,7 @@ def pattern_repetition(
     the most common string is taken within each stratum and the counts are added, so an interviewer who writes one
     string for control and another for treatment is caught. The null shuffles interviewer labels within each area
     (and stratum), keeping how many interviews each interviewer did there, and recounts. Local opinion therefore sets
-    the benchmark: an interviewer working where everyone gives the same answers is compared with neighbours who face
+    the benchmark: an interviewer working where everyone gives the same answers is compared with neighbors who face
     the same people. ``expected_share`` is the mean shuffled share and ``p_value`` the share of shuffles with at least
     as many repeats. Interviews in areas with no other interviewer cannot be shuffled and are not tested (``tested``
     counts the rest).
