@@ -510,6 +510,8 @@ def straightlining(
     area_size = np.bincount(area_codes)
     area_flat = np.bincount(area_codes, weights=flat).astype(np.int64)
 
+    # Areas with the same margins have identical count distributions, across interviewers too.
+    pmfs: dict[tuple[int, int, int], np.ndarray] = {}
     records = []
     for code, value in enumerate(interviewer_values):
         own = interviewer_codes == code
@@ -525,7 +527,7 @@ def straightlining(
                 "share": float(flat[own].mean()),
                 "tested": int(tested.sum()),
                 "expected_share": sum(k * n / big for big, k, n in cells) / tested.sum() if cells else np.nan,
-                "p_value": hypergeometric_sum_sf(cells, observed) if cells else np.nan,
+                "p_value": hypergeometric_sum_sf(cells, observed, pmfs) if cells else np.nan,
             }
         )
     table = pd.DataFrame(records)

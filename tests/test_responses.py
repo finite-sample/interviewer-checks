@@ -31,6 +31,16 @@ def test_hypergeometric_sum_matches_single_area_and_convolution():
     assert hypergeometric_sum_sf([(20, 4, 4), (25, 10, 5)], 4) == pytest.approx(joint[4:].sum())
 
 
+def test_hypergeometric_sum_with_shifted_support_and_repeated_margins():
+    areas = [([1, 1, 1], 2), ([1, 1, 0, 0], 3), ([1, 1, 0, 0], 3), ([0, 0], 1)]
+    cells = [(len(values), sum(values), draws) for values, draws in areas]
+    choices = [[sum(draw) for draw in itertools.combinations(values, size)] for values, size in areas]
+    totals = np.array([sum(counts) for counts in itertools.product(*choices)])
+    pmfs = {}
+    for threshold in range(11):
+        assert hypergeometric_sum_sf(cells, threshold, pmfs) == pytest.approx(np.mean(totals >= threshold))
+
+
 def test_percent_match_agrees_with_a_pairwise_loop():
     rng = np.random.default_rng(0)
     df = pd.DataFrame(rng.integers(0, 3, size=(40, 6)).astype(float), columns=list("abcdef"))
