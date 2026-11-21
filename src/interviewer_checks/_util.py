@@ -72,18 +72,34 @@ def poisson_binomial_sf(probabilities: np.ndarray, observed: np.ndarray) -> np.n
     return np.minimum(tail[np.arange(n_rows), index], 1.0)
 
 
-def hypergeometric_sum_sf(cells: Sequence[tuple[int, int, int]], observed: int) -> float:
+def hypergeometric_sum_sf(
+    cells: Sequence[tuple[int, int, int]],
+    observed: int,
+    pmfs: dict[tuple[int, int, int], np.ndarray] | None = None,
+) -> float:
     """P(X >= observed) for X a sum of independent hypergeometric counts, one per (population, successes, draws).
 
     This is the exact null for "how many of an interviewer's interviews have a property" when interviewer labels are
     shuffled within each area: in an area with N interviews, K of them with the property, and n by this interviewer,
     the interviewer's count is hypergeometric, and areas are shuffled independently.
     """
+    pmfs = {} if pmfs is None else pmfs
+    lower = [max(0, draws + successes - population) for population, successes, draws in cells]
+    upper = [min(draws, successes) for _, successes, draws in cells]
+    if observed <= sum(lower):
+        return 1.0
+    if observed > sum(upper):
+        return 0.0
+
+    # Store only feasible counts. A deterministic area merely shifts the total.
     dist = np.ones(1)
-    for population, successes, draws in cells:
-        support = np.arange(0, draws + 1)
-        dist = np.convolve(dist, stats.hypergeom.pmf(support, population, successes, draws))
-    return float(min(dist[max(observed, 0) :].sum(), 1.0)) if observed < len(dist) else 0.0
+    for (population, successes, draws), lo, hi in zip(cells, lower, upper):
+        if lo < hi:
+            key = (population, successes, draws)
+            if key not in pmfs:
+                pmfs[key] = stats.hypergeom.pmf(np.arange(lo, hi + 1), population, successes, draws)
+            dist = np.convolve(dist, pmfs[key])
+    return float(min(dist[observed - sum(lower) :].sum(), 1.0))
 
 
 def bonferroni(p_values: np.ndarray) -> np.ndarray:
